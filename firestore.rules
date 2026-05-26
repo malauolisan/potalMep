@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: news
+    // Fields: title, summary, content, image, date, author, authorId, createdAt
+    //
+    // Collection: events
+    // Fields: title, description, date, time, location, image, createdAt
+    //
+    // Collection: institutions
+    // Fields: name, description, image, email, website, socials, createdAt
+    //
+    // Collection: articles
+    // Fields: title, subtitle, content, author, authorId, date, createdAt
+    //
+    // Collection: slides
+    // Fields: title, subtitle, image, link, createdAt
+    //
+    // Collection: featuredModules
+    // Fields: title, desc, img, color, link, createdAt
+    //
+    // Collection: users
+    // Fields: displayName, email, role, photoURL
+    //
+    // ===============================================================
+
+    // --- Helper Functions ---
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          ((request.auth.token.email == "epaz@e-paz.com.br" || request.auth.token.email == "admin@mep.org.br") && request.auth.token.email_verified == true));
+    }
+
+    function isColaborador() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'colaborador' || isAdmin());
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // --- Domain Validators ---
+
+    function isValidNews(data) {
+      return hasRequiredFields(['title', 'content', 'date']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 50000 &&
+             data.date is string &&
+             (!('image' in data) || (data.image is string && data.image.size() < 1000));
+    }
+
+    function isValidEvent(data) {
+      return hasRequiredFields(['title', 'date', 'time', 'location']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.date is string && data.time is string && data.location is string;
+    }
+
+    function isValidInstitution(data) {
+      return (!('name' in data) || (data.name is string && data.name.size() < 200)) &&
+             (!('description' in data) || (data.description is string)) &&
+             (!('email' in data) || (data.email is string)) &&
+             (!('image' in data) || (data.image is string)) &&
+             (!('website' in data) || (data.website is string)) &&
+             (!('socials' in data) || (data.socials is map));
+    }
+
+    function isValidArticle(data) {
+      return hasRequiredFields(['title', 'content', 'author', 'date']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.content is string && data.content.size() > 0;
+    }
+
+    function isValidUser(data) {
+      return hasRequiredFields(['email', 'role']) &&
+             data.email is string && data.role in ['admin', 'colaborador'];
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    match /news/{newsId} {
+      allow read: if true;
+      allow create: if isColaborador() && isValidNews(request.resource.data);
+      allow update: if isColaborador() && isValidNews(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isColaborador() && isValidEvent(request.resource.data);
+      allow update: if isColaborador() && isValidEvent(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /institutions/{instId} {
+      allow read: if true;
+      allow create: if isColaborador() && isValidInstitution(request.resource.data);
+      allow update: if isColaborador() && isValidInstitution(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create: if isColaborador() && isValidArticle(request.resource.data);
+      allow update: if isColaborador() && isValidArticle(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /slides/{slideId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /featuredModules/{moduleId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /test/{docId} {
+      allow read: if true;
+    }
+  }
+}
