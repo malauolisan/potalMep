@@ -1,0 +1,24 @@
+
+# Garante que o Apache entenda arquivos .tsx como módulos JavaScript
+<IfModule mod_mime.c>
+    AddType application/javascript .tsx
+</IfModule>
+
+# Habilita o CORS para que scripts externos funcionem bem
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
+
+# Garante que o navegador não tente "adivinhar" o tipo de arquivo (segurança)
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+# Redirecionamento amigável para a index
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . /index.html [L]
+</IfModule>

@@ -1,6 +1,5 @@
 {
-  "name": "Movimento Espírita Progressista",
-  "description": "Portal agregador de instituições sem fins lucrativos, promovendo convivência e divulgação de notícias e eventos.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "E-PAZ - Educação Pela Paz",
+  "description": "Landing page de boas-vindas para plataforma de educação online com integração de login Moodle.",
+  "requestFramePermissions": []
 }
