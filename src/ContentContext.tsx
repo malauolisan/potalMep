@@ -134,7 +134,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateNews = async (id: string, data: Partial<News>) => {
     try {
-      await updateDoc(doc(db, 'news', id), data);
+      await setDoc(doc(db, 'news', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (err) { handleFirestoreError(err, OperationType.UPDATE, `news/${id}`); }
   };
   const deleteNews = async (id: string) => {
@@ -150,7 +150,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateEvent = async (id: string, data: Partial<Event>) => {
     try {
-      await updateDoc(doc(db, 'events', id), data);
+      await setDoc(doc(db, 'events', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (err) { handleFirestoreError(err, OperationType.UPDATE, `events/${id}`); }
   };
   const deleteEvent = async (id: string) => {
@@ -166,7 +166,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateInstitution = async (id: string, data: Partial<Institution>) => {
     try {
-      await updateDoc(doc(db, 'institutions', id), data);
+      await setDoc(doc(db, 'institutions', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (err) { handleFirestoreError(err, OperationType.UPDATE, `institutions/${id}`); }
   };
   const deleteInstitution = async (id: string) => {
@@ -182,7 +182,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateArticle = async (id: string, data: Partial<Article>) => {
     try {
-      await updateDoc(doc(db, 'articles', id), data);
+      await setDoc(doc(db, 'articles', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (err) { handleFirestoreError(err, OperationType.UPDATE, `articles/${id}`); }
   };
   const deleteArticle = async (id: string) => {
@@ -198,7 +198,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateSlide = async (id: string, data: Partial<Slide>) => {
     try {
-      await updateDoc(doc(db, 'slides', id), data);
+      await setDoc(doc(db, 'slides', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (err) { handleFirestoreError(err, OperationType.UPDATE, `slides/${id}`); }
   };
   const deleteSlide = async (id: string) => {
@@ -214,7 +214,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
   const updateFeaturedModule = async (id: string, data: Partial<FeaturedModule>) => {
     try {
-      await updateDoc(doc(db, 'featuredModules', id), data);
+      await setDoc(doc(db, 'featuredModules', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
     } catch (err) { handleFirestoreError(err, OperationType.UPDATE, `featuredModules/${id}`); }
   };
   const deleteFeaturedModule = async (id: string) => {

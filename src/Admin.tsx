@@ -45,6 +45,7 @@ import { signOut } from 'firebase/auth';
 import { cn } from './lib/utils';
 import Markdown from 'react-markdown';
 import { News, Event, Institution, Article, UserProfile, Slide, FeaturedModule } from './types';
+import { mockNews, mockEvents, mockInstitutions, mockArticles, mockSlides, mockFeaturedModules } from './data';
 
 // --- Markdown Toolbar ---
 
@@ -214,30 +215,68 @@ const ShareModal = ({
   );
 };
 
+export const markdownComponents = {
+  a: ({ node, href, children, ...props }: any) => {
+    const safeHref = href || '#';
+    const isExternal = safeHref.startsWith('http://') || safeHref.startsWith('https://') || safeHref.startsWith('//') || safeHref.startsWith('mailto:');
+    return (
+      <a
+        href={safeHref}
+        target={isExternal ? '_blank' : undefined}
+        rel={isExternal ? 'noopener noreferrer' : undefined}
+        className="text-emerald-600 underline hover:text-emerald-800 transition-colors cursor-pointer break-words font-medium"
+        onClick={(e) => {
+          if (!safeHref || safeHref === '#') {
+            e.preventDefault();
+          }
+        }}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
+  img: ({ node, src, alt, ...props }: any) => {
+    if (!src) return null;
+    return (
+      <img
+        src={src}
+        alt={alt || 'Imagem'}
+        className="rounded-2xl max-w-full h-auto my-4 shadow-md border border-emerald-100 object-cover mx-auto"
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        {...props}
+      />
+    );
+  }
+};
+
 const MarkdownToolbar = ({ 
   textareaRef, 
-  content, 
+  content = '', 
   setContent 
 }: { 
-  textareaRef: React.RefObject<HTMLTextAreaElement>, 
-  content: string, 
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>, 
+  content?: string, 
   setContent: (val: string) => void 
 }) => {
   const insertText = (before: string, after: string = '') => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    const newText = content.substring(0, start) + before + selectedText + after + content.substring(end);
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? 0;
+    const currentContent = typeof content === 'string' ? content : '';
+    const selectedText = currentContent.substring(start, end);
+    const newText = currentContent.substring(0, start) + before + selectedText + after + currentContent.substring(end);
     
     setContent(newText);
     
     // Reset focus and selection
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(start + before.length, end + before.length);
+      const newPos = start + before.length + (selectedText ? selectedText.length + after.length : 0);
+      textarea.setSelectionRange(newPos, newPos);
     }, 0);
   };
 
@@ -249,7 +288,22 @@ const MarkdownToolbar = ({
     { icon: List, label: 'Lista', action: () => insertText('- ', '') },
     { icon: Quote, label: 'Citação', action: () => insertText('> ', '') },
     { icon: Code, label: 'Código', action: () => insertText('`', '`') },
-    { icon: LinkIcon, label: 'Link', action: () => insertText('[', '](url)') },
+    { 
+      icon: LinkIcon, 
+      label: 'Link', 
+      action: () => {
+        const textarea = textareaRef.current;
+        const start = textarea?.selectionStart ?? 0;
+        const end = textarea?.selectionEnd ?? 0;
+        const currentContent = typeof content === 'string' ? content : '';
+        const selectedText = currentContent.substring(start, end);
+        if (selectedText.startsWith('http://') || selectedText.startsWith('https://')) {
+          insertText('[Link](', ')');
+        } else {
+          insertText('[', '](https://)');
+        }
+      } 
+    },
     { icon: ImageIcon, label: 'Imagem', action: () => insertText('![alt](', ')') },
   ];
 
@@ -415,8 +469,8 @@ const AdminSidebar = () => {
 
       <div className="p-4 border-t border-emerald-900 space-y-4">
         <div className="flex items-center gap-3 px-4 py-2">
-          {user?.photoURL ? (
-            <img src={user.photoURL} className="w-8 h-8 rounded-full border border-emerald-700" alt="Avatar" />
+          {Boolean(user?.photoURL && user.photoURL.trim()) ? (
+            <img src={user.photoURL} className="w-8 h-8 rounded-full border border-emerald-700 object-cover" alt="Avatar" referrerPolicy="no-referrer" />
           ) : (
             <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center"><UserIcon size={16} /></div>
           )}
@@ -552,6 +606,59 @@ export const Dashboard = () => {
 
 // --- Reusable Components ---
 
+// Helper function to compress and convert image file to optimized Data URL
+export const compressAndReadFile = (file: File, maxDim = 1280, quality = 0.82): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    // If SVG or GIF, read as regular Data URL without canvas re-encode to preserve animations / vectors
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(outputType, quality);
+        resolve(dataUrl);
+      };
+      img.onerror = () => {
+        resolve(event.target?.result as string);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+};
+
 const ImageUploadField = ({ 
   label, 
   value, 
@@ -564,21 +671,59 @@ const ImageUploadField = ({
   folder: string
 }) => {
   const [uploading, setUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  const processFile = async (file: File) => {
+    if (!file || !file.type.startsWith('image/')) {
+      alert('Por favor, selecione um arquivo de imagem válido.');
+      return;
+    }
+
+    setUploading(true);
+    setImageError(false);
+    try {
+      // 1. Try Firebase Storage
+      let storageUploaded = false;
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storageRef = ref(storage, `${folder}/${Date.now()}_${safeName}`);
+        await uploadBytes(storageRef, file);
+        const url = await getDownloadURL(storageRef);
+        if (url) {
+          onChange(url);
+          storageUploaded = true;
+        }
+      } catch (storageErr) {
+        console.warn(`Firebase Storage not available for ${folder}, falling back to optimized inline format:`, storageErr);
+      }
+
+      // 2. Fallback to optimized compressed data URL if storage didn't succeed
+      if (!storageUploaded) {
+        const dataUrl = await compressAndReadFile(file);
+        onChange(dataUrl);
+      }
+    } catch (error) {
+      console.error(`Error processing image for ${folder}:`, error);
+      alert('Erro ao processar imagem. Tente inserir a URL da imagem diretamente.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      await processFile(file);
+    }
+  };
 
-    setUploading(true);
-    try {
-      const storageRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      onChange(url);
-    } catch (error) {
-      console.error(`Error uploading image to ${folder}:`, error);
-    } finally {
-      setUploading(false);
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processFile(file);
     }
   };
 
@@ -586,14 +731,20 @@ const ImageUploadField = ({
     <div>
       <label className="block text-xs font-bold text-gray-500 uppercase mb-2">{label}</label>
       <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-4">
-          <label className={cn(
-            "flex-grow flex items-center justify-center gap-2 px-4 py-3 bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all",
-            uploading && "opacity-50 cursor-wait"
-          )}>
-            <ImageIcon size={20} className="text-gray-400" />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <label 
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-50 border-2 border-dashed rounded-xl cursor-pointer transition-all text-center",
+              isDragOver ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-emerald-500 hover:bg-emerald-50",
+              uploading && "opacity-50 cursor-wait"
+            )}
+          >
+            <ImageIcon size={20} className={cn("shrink-0", isDragOver ? "text-emerald-600" : "text-gray-400")} />
             <span className="text-sm font-medium text-gray-600">
-              {uploading ? 'Enviando...' : 'Fazer upload'}
+              {uploading ? 'Processando imagem...' : 'Fazer upload / Arrastar'}
             </span>
             <input 
               type="file" 
@@ -603,22 +754,42 @@ const ImageUploadField = ({
               className="hidden" 
             />
           </label>
-          <div className="text-xs text-gray-400 font-medium">OU</div>
+          <div className="text-xs text-gray-400 font-bold self-center">OU</div>
           <input 
             type="text" 
             value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="flex-grow p-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs"
-            placeholder="URL da imagem..."
+            onChange={(e) => {
+              onChange(e.target.value);
+              setImageError(false);
+            }}
+            className="flex-1 p-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs"
+            placeholder="Cole o link da imagem (https://...)"
           />
         </div>
-        {value && (
-          <div className="aspect-video rounded-2xl overflow-hidden border border-gray-100 relative group">
-            <img src={value} className="w-full h-full object-cover" alt="Preview" referrerPolicy="no-referrer" />
+        {Boolean(value && value.trim()) && (
+          <div className="aspect-video rounded-2xl overflow-hidden border border-gray-100 relative group bg-gray-50 max-h-56">
+            {!imageError ? (
+              <img 
+                src={value} 
+                className="w-full h-full object-cover" 
+                alt="Preview" 
+                referrerPolicy="no-referrer"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-red-50 text-red-600">
+                <span className="text-xs font-bold">Não foi possível carregar a prévia da imagem.</span>
+                <span className="text-[11px] text-red-400 mt-1">Verifique se o link está correto ou tente fazer upload do arquivo.</span>
+              </div>
+            )}
             <button 
               type="button"
-              onClick={() => onChange('')}
-              className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={() => {
+                onChange('');
+                setImageError(false);
+              }}
+              title="Remover imagem"
+              className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-full opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-700"
             >
               <Trash2 size={14} />
             </button>
@@ -782,7 +953,11 @@ export const ManageNews = () => {
   const [editing, setEditing] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [sharingItem, setSharingItem] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const displayNews = news.length > 0 ? news : mockNews;
 
   const initialForm = { 
     title: '', 
@@ -797,6 +972,12 @@ export const ManageNews = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.title.trim()) {
+      alert('Por favor, informe o título da notícia.');
+      return;
+    }
+    setSaving(true);
+    setErrorMessage(null);
     try {
       if (editing) {
         await updateNews(editing.id, form);
@@ -806,8 +987,13 @@ export const ManageNews = () => {
       setEditing(null);
       setIsAdding(false);
       setForm(initialForm);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving news:", error);
+      const msg = error?.message || 'Erro ao salvar notícia. Verifique os dados e tente novamente.';
+      setErrorMessage(msg);
+      alert('Não foi possível salvar a notícia: ' + msg);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -815,7 +1001,7 @@ export const ManageNews = () => {
     return (
       <div className="space-y-8">
         <button 
-          onClick={() => { setEditing(null); setIsAdding(false); }}
+          onClick={() => { setEditing(null); setIsAdding(false); setErrorMessage(null); }}
           className="flex items-center gap-2 text-emerald-600 font-bold hover:gap-3 transition-all"
         >
           <ArrowLeft size={20} /> Voltar para Lista
@@ -825,6 +1011,12 @@ export const ManageNews = () => {
           <h1 className="text-3xl font-serif text-emerald-950">{editing ? 'Editar Notícia' : 'Nova Notícia'}</h1>
         </header>
 
+        {errorMessage && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+            {errorMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
@@ -832,6 +1024,7 @@ export const ManageNews = () => {
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Título</label>
                 <input 
                   type="text" 
+                  required
                   value={form.title}
                   onChange={(e) => setForm({...form, title: e.target.value})}
                   className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-lg font-bold"
@@ -870,7 +1063,7 @@ export const ManageNews = () => {
                     value={form.content}
                     onChange={(e) => setForm({...form, content: e.target.value})}
                     className="w-full p-4 bg-gray-50 outline-none h-96 font-mono text-sm border-none"
-                    placeholder="# Título Principal\n\nEscreva aqui o conteúdo..."
+                    placeholder="# Título Principal&#10;&#10;Escreva aqui o conteúdo..."
                   />
                 </div>
               </div>
@@ -905,9 +1098,10 @@ export const ManageNews = () => {
               />
               <button 
                 type="submit"
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                disabled={saving}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-100 cursor-pointer"
               >
-                <Save size={20} /> {editing ? 'Salvar Alterações' : 'Publicar Notícia'}
+                <Save size={20} /> {saving ? 'Salvando...' : (editing ? 'Salvar Alterações' : 'Publicar Notícia')}
               </button>
             </div>
 
@@ -916,7 +1110,7 @@ export const ManageNews = () => {
                 <Edit size={16} /> Preview do Conteúdo
               </h4>
               <div className="prose prose-sm prose-emerald max-h-64 overflow-y-auto bg-white p-4 rounded-xl border border-emerald-100">
-                <Markdown>{form.content || '*Nenhum conteúdo ainda...*'}</Markdown>
+                <Markdown components={markdownComponents}>{form.content || '*Nenhum conteúdo ainda...*'}</Markdown>
               </div>
             </div>
           </div>
@@ -933,7 +1127,7 @@ export const ManageNews = () => {
           <p className="text-gray-500">Gerencie as notícias e atualizações do portal.</p>
         </div>
         <button 
-          onClick={() => setIsAdding(true)}
+          onClick={() => { setIsAdding(true); setEditing(null); setForm(initialForm); setErrorMessage(null); }}
           className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 hover:scale-105 active:scale-95"
         >
           <Plus size={24} /> Nova Notícia
@@ -941,12 +1135,13 @@ export const ManageNews = () => {
       </header>
 
       <ContentList 
-        items={news} 
+        items={displayNews} 
         title="Listagem de Notícias" 
         icon={Newspaper}
         onShare={(item) => setSharingItem(item)}
         onEdit={(item) => { 
           setEditing(item); 
+          setErrorMessage(null);
           setForm({
             title: item.title || '',
             subtitle: item.subtitle || '',
@@ -976,13 +1171,23 @@ export const ManageEvents = () => {
   const { events, addEvent, updateEvent, deleteEvent } = useContent();
   const [editing, setEditing] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const displayEvents = events.length > 0 ? events : mockEvents;
 
   const initialForm = { title: '', subtitle: '', author: '', description: '', date: '', time: '', location: '', image: '' };
   const [form, setForm] = useState(initialForm);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.title.trim()) {
+      alert('Por favor, informe o título do evento.');
+      return;
+    }
+    setSaving(true);
+    setErrorMessage(null);
     try {
       if (editing) {
         await updateEvent(editing.id, form);
@@ -992,8 +1197,13 @@ export const ManageEvents = () => {
       setEditing(null);
       setIsAdding(false);
       setForm(initialForm);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving event:", error);
+      const msg = error?.message || 'Erro ao salvar evento. Verifique os dados e tente novamente.';
+      setErrorMessage(msg);
+      alert('Erro ao salvar evento: ' + msg);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1001,7 +1211,7 @@ export const ManageEvents = () => {
     return (
       <div className="space-y-8">
         <button 
-          onClick={() => { setEditing(null); setIsAdding(false); }} 
+          onClick={() => { setEditing(null); setIsAdding(false); setErrorMessage(null); }} 
           className="flex items-center gap-2 text-emerald-600 font-bold hover:gap-3 transition-all"
         >
           <ArrowLeft size={20} /> Voltar para Lista
@@ -1011,6 +1221,12 @@ export const ManageEvents = () => {
           <h1 className="text-3xl font-serif text-emerald-950">{editing ? 'Editar Evento' : 'Novo Evento'}</h1>
         </header>
 
+        {errorMessage && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+            {errorMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
@@ -1018,6 +1234,7 @@ export const ManageEvents = () => {
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Título</label>
                 <input 
                   type="text" 
+                  required
                   value={form.title} 
                   onChange={(e) => setForm({...form, title: e.target.value})} 
                   className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-lg font-bold" 
@@ -1079,9 +1296,10 @@ export const ManageEvents = () => {
               />
               <button 
                 type="submit" 
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                disabled={saving}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-100 cursor-pointer"
               >
-                <Save size={20} /> {editing ? 'Salvar Alterações' : 'Criar Evento'}
+                <Save size={20} /> {saving ? 'Salvando...' : (editing ? 'Salvar Alterações' : 'Criar Evento')}
               </button>
             </div>
           </div>
@@ -1098,14 +1316,15 @@ export const ManageEvents = () => {
           <p className="text-gray-500">Gerencie a agenda de eventos e atividades.</p>
         </div>
         <button 
-          onClick={() => setIsAdding(true)} 
+          onClick={() => { setIsAdding(true); setEditing(null); setForm(initialForm); setErrorMessage(null); }} 
           className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 hover:scale-105 active:scale-95"
         >
           <Plus size={24} /> Novo Evento
         </button>
       </header>
-      <ContentList items={events} title="Agenda de Eventos" icon={Calendar} onEdit={(item) => { 
+      <ContentList items={displayEvents} title="Agenda de Eventos" icon={Calendar} onEdit={(item) => { 
         setEditing(item); 
+        setErrorMessage(null);
         setForm({
           title: item.title || '',
           subtitle: item.subtitle || '',
@@ -1127,7 +1346,11 @@ export const ManageInstitutions = () => {
   const { institutions, addInstitution, updateInstitution, deleteInstitution } = useContent();
   const [editing, setEditing] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const displayInstitutions = institutions.length > 0 ? institutions : mockInstitutions;
 
   const initialForm: Partial<Institution> & { socials: any } = { 
     name: '', 
@@ -1146,6 +1369,12 @@ export const ManageInstitutions = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name?.trim()) {
+      alert('Por favor, informe o nome da instituição.');
+      return;
+    }
+    setSaving(true);
+    setErrorMessage(null);
     try {
       if (editing) {
         await updateInstitution(editing.id, form);
@@ -1155,8 +1384,13 @@ export const ManageInstitutions = () => {
       setEditing(null);
       setIsAdding(false);
       setForm(initialForm);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving institution:", error);
+      const msg = error?.message || 'Erro ao salvar instituição. Verifique os dados e tente novamente.';
+      setErrorMessage(msg);
+      alert('Erro ao salvar instituição: ' + msg);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1164,7 +1398,7 @@ export const ManageInstitutions = () => {
     return (
       <div className="space-y-8">
         <button 
-          onClick={() => { setEditing(null); setIsAdding(false); }} 
+          onClick={() => { setEditing(null); setIsAdding(false); setErrorMessage(null); }} 
           className="flex items-center gap-2 text-emerald-600 font-bold hover:gap-3 transition-all"
         >
           <ArrowLeft size={20} /> Voltar para Lista
@@ -1174,6 +1408,12 @@ export const ManageInstitutions = () => {
           <h1 className="text-3xl font-serif text-emerald-950">{editing ? 'Editar Instituição' : 'Nova Instituição'}</h1>
         </header>
 
+        {errorMessage && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+            {errorMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
@@ -1181,6 +1421,7 @@ export const ManageInstitutions = () => {
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nome</label>
                 <input 
                   type="text" 
+                  required
                   value={form.name} 
                   onChange={(e) => setForm({...form, name: e.target.value})} 
                   className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-lg font-bold" 
@@ -1192,12 +1433,12 @@ export const ManageInstitutions = () => {
                 <div className="border border-gray-100 rounded-2xl overflow-hidden">
                   <MarkdownToolbar 
                     textareaRef={textareaRef} 
-                    content={form.description} 
+                    content={form.description || ''} 
                     setContent={(val) => setForm({...form, description: val})} 
                   />
                   <textarea 
                     ref={textareaRef}
-                    value={form.description} 
+                    value={form.description || ''} 
                     onChange={(e) => setForm({...form, description: e.target.value})} 
                     className="w-full p-4 bg-gray-50 outline-none h-64 font-mono text-sm border-none" 
                     placeholder="História e missão da instituição..."
@@ -1212,7 +1453,7 @@ export const ManageInstitutions = () => {
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">E-mail (Opcional)</label>
                 <input 
                   type="email" 
-                  value={form.email} 
+                  value={form.email || ''} 
                   onChange={(e) => setForm({...form, email: e.target.value})} 
                   className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none" 
                   placeholder="contato@instituicao.org"
@@ -1220,7 +1461,7 @@ export const ManageInstitutions = () => {
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Website</label>
-                <input type="text" value={form.website} onChange={(e) => setForm({...form, website: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none" />
+                <input type="text" value={form.website || ''} onChange={(e) => setForm({...form, website: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Instagram</label>
@@ -1240,15 +1481,16 @@ export const ManageInstitutions = () => {
               </div>
               <ImageUploadField 
                 label="Imagem da Instituição" 
-                value={form.image} 
+                value={form.image || ''} 
                 onChange={(url) => setForm({...form, image: url})} 
                 folder="institutions" 
               />
               <button 
                 type="submit" 
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                disabled={saving}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-100 cursor-pointer"
               >
-                <Save size={20} /> {editing ? 'Salvar Alterações' : 'Cadastrar Instituição'}
+                <Save size={20} /> {saving ? 'Salvando...' : (editing ? 'Salvar Alterações' : 'Cadastrar Instituição')}
               </button>
             </div>
           </div>
@@ -1265,18 +1507,19 @@ export const ManageInstitutions = () => {
           <p className="text-gray-500">Gerencie as instituições agregadas ao movimento.</p>
         </div>
         <button 
-          onClick={() => setIsAdding(true)} 
+          onClick={() => { setIsAdding(true); setEditing(null); setForm(initialForm); setErrorMessage(null); }} 
           className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 hover:scale-105 active:scale-95"
         >
           <Plus size={24} /> Nova Instituição
         </button>
       </header>
       <ContentList 
-        items={institutions} 
+        items={displayInstitutions} 
         title="Instituições Agregadas" 
         icon={Building2} 
         onEdit={(item) => { 
           setEditing(item); 
+          setErrorMessage(null);
           setForm({
             name: item.name || '',
             description: item.description || '',
@@ -1303,7 +1546,11 @@ export const ManageArticles = () => {
   const { articles, addArticle, updateArticle, deleteArticle, user } = useContent();
   const [editing, setEditing] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const displayArticles = articles.length > 0 ? articles : mockArticles;
 
   const initialForm = { 
     title: '', 
@@ -1317,6 +1564,12 @@ export const ManageArticles = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.title.trim()) {
+      alert('Por favor, informe o título do artigo.');
+      return;
+    }
+    setSaving(true);
+    setErrorMessage(null);
     try {
       if (editing) {
         await updateArticle(editing.id, form);
@@ -1326,8 +1579,13 @@ export const ManageArticles = () => {
       setEditing(null);
       setIsAdding(false);
       setForm(initialForm);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving article:", error);
+      const msg = error?.message || 'Erro ao salvar artigo. Verifique os dados e tente novamente.';
+      setErrorMessage(msg);
+      alert('Erro ao salvar artigo: ' + msg);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1335,7 +1593,7 @@ export const ManageArticles = () => {
     return (
       <div className="space-y-8">
         <button 
-          onClick={() => { setEditing(null); setIsAdding(false); }} 
+          onClick={() => { setEditing(null); setIsAdding(false); setErrorMessage(null); }} 
           className="flex items-center gap-2 text-emerald-600 font-bold hover:gap-3 transition-all"
         >
           <ArrowLeft size={20} /> Voltar para Lista
@@ -1345,6 +1603,12 @@ export const ManageArticles = () => {
           <h1 className="text-3xl font-serif text-emerald-950">{editing ? 'Editar Artigo' : 'Novo Artigo'}</h1>
         </header>
 
+        {errorMessage && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+            {errorMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
@@ -1352,6 +1616,7 @@ export const ManageArticles = () => {
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Título</label>
                 <input 
                   type="text" 
+                  required
                   value={form.title} 
                   onChange={(e) => setForm({...form, title: e.target.value})} 
                   className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-lg font-bold" 
@@ -1405,15 +1670,16 @@ export const ManageArticles = () => {
               </div>
               <button 
                 type="submit" 
-                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                disabled={saving}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-100 cursor-pointer"
               >
-                <Save size={20} /> {editing ? 'Salvar Alterações' : 'Publicar Artigo'}
+                <Save size={20} /> {saving ? 'Salvando...' : (editing ? 'Salvar Alterações' : 'Publicar Artigo')}
               </button>
             </div>
             <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
               <h4 className="text-sm font-bold text-emerald-900 mb-3">Preview</h4>
               <div className="prose prose-sm prose-emerald max-h-64 overflow-y-auto bg-white p-4 rounded-xl border border-emerald-100">
-                <Markdown>{form.content || '*Nenhum conteúdo ainda...*'}</Markdown>
+                <Markdown components={markdownComponents}>{form.content || '*Nenhum conteúdo ainda...*'}</Markdown>
               </div>
             </div>
           </div>
@@ -1430,18 +1696,19 @@ export const ManageArticles = () => {
           <p className="text-gray-500">Gerencie os artigos e reflexões doutrinárias.</p>
         </div>
         <button 
-          onClick={() => setIsAdding(true)} 
+          onClick={() => { setIsAdding(true); setEditing(null); setForm(initialForm); setErrorMessage(null); }} 
           className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 hover:scale-105 active:scale-95"
         >
           <Plus size={24} /> Novo Artigo
         </button>
       </header>
       <ContentList 
-        items={articles} 
+        items={displayArticles} 
         title="Artigos e Reflexões" 
         icon={BookOpen} 
         onEdit={(item) => { 
           setEditing(item); 
+          setErrorMessage(null);
           setForm({
             title: item.title || '',
             subtitle: item.subtitle || '',
@@ -1650,8 +1917,8 @@ export const ManageUsers = () => {
               <tr key={u.id} className="hover:bg-gray-50/50 transition-colors group">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
-                    {u.photoURL ? (
-                      <img src={u.photoURL} className="w-8 h-8 rounded-full" alt="" />
+                    {Boolean(u.photoURL && u.photoURL.trim()) ? (
+                      <img src={u.photoURL} className="w-8 h-8 rounded-full object-cover" alt="" referrerPolicy="no-referrer" />
                     ) : (
                       <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
                         <UserIcon size={16} />
@@ -1697,29 +1964,47 @@ export const ManageSlides = () => {
   const [editing, setEditing] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const displaySlides = slides.length > 0 ? slides : mockSlides;
 
   const [form, setForm] = useState<Omit<Slide, 'id' | 'createdAt'>>({ title: '', subtitle: '', image: '', link: '' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.title.trim()) {
+      alert('Por favor, informe o título do slide.');
+      return;
+    }
     const { title, subtitle, image, link } = form;
     const slideData = { title, subtitle, image, link };
-    
-    if (editing) {
-      await updateSlide(editing.id, slideData);
-    } else {
-      await addSlide(slideData);
+    setSaving(true);
+    setErrorMessage(null);
+    try {
+      if (editing) {
+        await updateSlide(editing.id, slideData);
+      } else {
+        await addSlide(slideData);
+      }
+      setEditing(null);
+      setIsAdding(false);
+      setForm({ title: '', subtitle: '', image: '', link: '' });
+    } catch (error: any) {
+      console.error("Error saving slide:", error);
+      const msg = error?.message || 'Erro ao salvar slide.';
+      setErrorMessage(msg);
+      alert('Erro ao salvar slide: ' + msg);
+    } finally {
+      setSaving(false);
     }
-    setEditing(null);
-    setIsAdding(false);
-    setForm({ title: '', subtitle: '', image: '', link: '' });
   };
 
   if (isAdding || editing) {
     return (
       <div className="space-y-8">
         <button 
-          onClick={() => { setIsAdding(false); setEditing(null); }}
+          onClick={() => { setIsAdding(false); setEditing(null); setErrorMessage(null); }}
           className="flex items-center gap-2 text-emerald-600 font-bold hover:gap-3 transition-all"
         >
           <ArrowLeft size={20} /> Voltar para Lista
@@ -1727,6 +2012,13 @@ export const ManageSlides = () => {
         <header>
           <h1 className="text-3xl font-serif text-emerald-950">{editing ? 'Editar Slide' : 'Novo Slide'}</h1>
         </header>
+
+        {errorMessage && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+            {errorMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="max-w-2xl bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Título</label>
@@ -1746,8 +2038,12 @@ export const ManageSlides = () => {
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Link (Opcional)</label>
             <input type="text" value={form.link} onChange={(e) => setForm({...form, link: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none" />
           </div>
-          <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
-            <Save size={20} /> {editing ? 'Salvar Alterações' : 'Adicionar Slide'}
+          <button 
+            type="submit" 
+            disabled={saving}
+            className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-100 cursor-pointer"
+          >
+            <Save size={20} /> {saving ? 'Salvando...' : (editing ? 'Salvar Alterações' : 'Adicionar Slide')}
           </button>
         </form>
       </div>
@@ -1768,19 +2064,24 @@ export const ManageSlides = () => {
           <h1 className="text-4xl font-serif text-emerald-950 mb-2">Slides da Home</h1>
           <p className="text-gray-500">Gerencie o carrossel de imagens da página inicial.</p>
         </div>
-        <button onClick={() => setIsAdding(true)} className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
+        <button onClick={() => { setIsAdding(true); setEditing(null); setErrorMessage(null); setForm({ title: '', subtitle: '', image: '', link: '' }); }} className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
           <Plus size={24} /> Novo Slide
         </button>
       </header>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {slides.map(slide => (
+        {displaySlides.map(slide => (
           <div key={slide.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden group">
-            <div className="h-48 relative">
-              <img src={slide.image} className="w-full h-full object-cover" alt="" />
+            <div className="h-48 relative bg-emerald-900">
+              {slide.image ? (
+                <img src={slide.image} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-emerald-200 text-sm">Sem imagem</div>
+              )}
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <div className="flex gap-2">
                   <button onClick={() => { 
                     setEditing(slide); 
+                    setErrorMessage(null);
                     setForm({
                       title: slide.title || '',
                       subtitle: slide.subtitle || '',
@@ -1810,29 +2111,47 @@ export const ManageFeaturedModules = () => {
   const [editing, setEditing] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const displayModules = featuredModules.length > 0 ? featuredModules : mockFeaturedModules;
 
   const [form, setForm] = useState<Omit<FeaturedModule, 'id' | 'createdAt'>>({ title: '', desc: '', img: '', color: 'bg-emerald-600', link: '' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.title.trim()) {
+      alert('Por favor, informe o título do módulo.');
+      return;
+    }
     const { title, desc, img, color, link } = form;
     const moduleData = { title, desc, img, color, link };
-    
-    if (editing) {
-      await updateFeaturedModule(editing.id, moduleData);
-    } else {
-      await addFeaturedModule(moduleData);
+    setSaving(true);
+    setErrorMessage(null);
+    try {
+      if (editing) {
+        await updateFeaturedModule(editing.id, moduleData);
+      } else {
+        await addFeaturedModule(moduleData);
+      }
+      setEditing(null);
+      setIsAdding(false);
+      setForm({ title: '', desc: '', img: '', color: 'bg-emerald-600', link: '' });
+    } catch (error: any) {
+      console.error("Error saving featured module:", error);
+      const msg = error?.message || 'Erro ao salvar módulo.';
+      setErrorMessage(msg);
+      alert('Erro ao salvar módulo: ' + msg);
+    } finally {
+      setSaving(false);
     }
-    setEditing(null);
-    setIsAdding(false);
-    setForm({ title: '', desc: '', img: '', color: 'bg-emerald-600', link: '' });
   };
 
   if (isAdding || editing) {
     return (
       <div className="space-y-8">
         <button 
-          onClick={() => { setIsAdding(false); setEditing(null); }}
+          onClick={() => { setIsAdding(false); setEditing(null); setErrorMessage(null); }}
           className="flex items-center gap-2 text-emerald-600 font-bold hover:gap-3 transition-all"
         >
           <ArrowLeft size={20} /> Voltar para Lista
@@ -1840,6 +2159,13 @@ export const ManageFeaturedModules = () => {
         <header>
           <h1 className="text-3xl font-serif text-emerald-950">{editing ? 'Editar Módulo' : 'Novo Módulo'}</h1>
         </header>
+
+        {errorMessage && (
+          <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+            {errorMessage}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="max-w-2xl bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Título</label>
@@ -1881,8 +2207,12 @@ export const ManageFeaturedModules = () => {
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Link</label>
             <input type="text" value={form.link} onChange={(e) => setForm({...form, link: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none" required />
           </div>
-          <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
-            <Save size={20} /> {editing ? 'Salvar Alterações' : 'Adicionar Módulo'}
+          <button 
+            type="submit" 
+            disabled={saving}
+            className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-100 cursor-pointer"
+          >
+            <Save size={20} /> {saving ? 'Salvando...' : (editing ? 'Salvar Alterações' : 'Adicionar Módulo')}
           </button>
         </form>
       </div>
@@ -1903,19 +2233,24 @@ export const ManageFeaturedModules = () => {
           <h1 className="text-4xl font-serif text-emerald-950 mb-2">Módulos da Home</h1>
           <p className="text-gray-500">Gerencie os blocos de destaque da página inicial.</p>
         </div>
-        <button onClick={() => setIsAdding(true)} className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
+        <button onClick={() => { setIsAdding(true); setEditing(null); setErrorMessage(null); setForm({ title: '', desc: '', img: '', color: 'bg-emerald-600', link: '' }); }} className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
           <Plus size={24} /> Novo Módulo
         </button>
       </header>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {featuredModules.map(m => (
+        {displayModules.map(m => (
           <div key={m.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden group">
-            <div className="h-40 relative">
-              <img src={m.img} className="w-full h-full object-cover" alt="" />
+            <div className="h-40 relative bg-emerald-900">
+              {m.img ? (
+                <img src={m.img} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-emerald-200 text-sm">Sem imagem</div>
+              )}
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 <div className="flex gap-2">
                   <button onClick={() => { 
                     setEditing(m); 
+                    setErrorMessage(null);
                     setForm({
                       title: m.title || '',
                       desc: m.desc || '',

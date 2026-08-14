@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Menu, X, Facebook, Instagram, Youtube, Mail, Phone, MapPin, ChevronRight, ChevronDown, Calendar, Clock, Twitter, Globe, ArrowRight, Edit, Save, Plus, Trash2, LogOut, User } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useParams, useNavigate } from 'react-router-dom';
+import { Menu, X, Facebook, Instagram, Youtube, Mail, Phone, MapPin, ChevronRight, ChevronDown, Calendar, Clock, Twitter, Globe, ArrowRight, ArrowLeft, Share2, Check, Edit, Save, Plus, Trash2, LogOut, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { mockNews, mockEvents, mockInstitutions, mockArticles } from './data';
@@ -58,6 +58,43 @@ const BootstrapAdmin = () => {
   }, []);
 
   return null;
+};
+
+// --- Markdown Link and Image Renderer ---
+const markdownComponents = {
+  a: ({ node, href, children, ...props }: any) => {
+    const safeHref = href || '#';
+    const isExternal = safeHref.startsWith('http://') || safeHref.startsWith('https://') || safeHref.startsWith('//') || safeHref.startsWith('mailto:');
+    return (
+      <a
+        href={safeHref}
+        target={isExternal ? '_blank' : undefined}
+        rel={isExternal ? 'noopener noreferrer' : undefined}
+        className="text-emerald-600 underline hover:text-emerald-800 transition-colors cursor-pointer break-words font-medium"
+        onClick={(e) => {
+          if (!safeHref || safeHref === '#') {
+            e.preventDefault();
+          }
+        }}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
+  img: ({ node, src, alt, ...props }: any) => {
+    if (!src) return null;
+    return (
+      <img
+        src={src}
+        alt={alt || 'Imagem'}
+        className="rounded-2xl max-w-full h-auto my-6 shadow-md border border-emerald-100 object-cover mx-auto"
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        {...props}
+      />
+    );
+  }
 };
 
 const Header = () => {
@@ -231,6 +268,267 @@ const Header = () => {
   );
 };
 
+// --- Content Detail Modals ---
+
+const NewsModal = ({ item, onClose }: { item: any, onClose: () => void }) => {
+  if (!item) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative my-auto animate-in fade-in zoom-in-95 duration-200">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors backdrop-blur-md"
+        >
+          <X size={20} />
+        </button>
+        {Boolean(item.image && item.image.trim()) && (
+          <div className="w-full aspect-video sm:h-72 overflow-hidden bg-emerald-50 relative">
+            <img
+              src={item.image}
+              alt={item.title || 'Notícia'}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        )}
+        <div className="p-6 sm:p-10 space-y-6">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-emerald-600 uppercase tracking-wider">
+            <span className="px-3 py-1 bg-emerald-50 rounded-full">{item.date}</span>
+            {item.author && <span>Por {item.author}</span>}
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-serif text-emerald-950 leading-tight">
+            {item.title}
+          </h2>
+          {item.subtitle && (
+            <p className="text-lg text-emerald-800/80 font-medium italic">
+              {item.subtitle}
+            </p>
+          )}
+          {item.summary && (
+            <p className="text-base text-gray-700 font-medium bg-emerald-50/50 p-4 rounded-xl border-l-4 border-emerald-500">
+              {item.summary}
+            </p>
+          )}
+          <div className="text-gray-700 leading-relaxed prose prose-emerald max-w-none">
+            <Markdown components={markdownComponents}>{item.content || ''}</Markdown>
+          </div>
+          <div className="pt-6 border-t border-gray-100 flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors text-sm"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ArticleDetailPage = () => {
+  const { id } = useParams<{ id: string }>();
+  const { articles } = useContent();
+  const [copied, setCopied] = useState(false);
+  const displayArticles = articles.length > 0 ? articles : mockArticles;
+  
+  const article = displayArticles.find(a => String(a.id) === String(id));
+  const otherArticles = displayArticles.filter(a => String(a.id) !== String(id)).slice(0, 4);
+
+  const handleShare = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
+  if (!article) {
+    return (
+      <div className="pt-40 pb-24 px-6 bg-white min-h-screen">
+        <div className="max-w-3xl mx-auto text-center space-y-6">
+          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+            <Calendar size={32} />
+          </div>
+          <h1 className="text-3xl font-serif text-emerald-950 font-bold">Artigo não encontrado</h1>
+          <p className="text-gray-600">O artigo que você procura não foi encontrado ou foi removido.</p>
+          <Link
+            to="/artigos"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-full font-bold hover:bg-emerald-700 transition-colors"
+          >
+            <ArrowLeft size={18} /> Voltar para todos os artigos
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-32 pb-24 px-6 bg-white min-h-screen">
+      <div className="max-w-4xl mx-auto">
+        {/* Navigation Breadcrumb & Share */}
+        <div className="flex items-center justify-between gap-4 mb-8">
+          <Link
+            to="/artigos"
+            className="inline-flex items-center gap-2 text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors group"
+          >
+            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+            Voltar para Artigos
+          </Link>
+
+          <button
+            onClick={handleShare}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold transition-colors"
+            title="Compartilhar link"
+          >
+            {copied ? (
+              <>
+                <Check size={14} className="text-emerald-600" />
+                <span>Link Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Share2 size={14} />
+                <span>Compartilhar</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Article Header */}
+        <header className="space-y-4 mb-10">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-emerald-600 uppercase tracking-widest">
+            <span className="px-3 py-1 bg-emerald-50 rounded-full">{article.date}</span>
+            {article.author && (
+              <>
+                <span className="w-1.5 h-1.5 bg-emerald-300 rounded-full" />
+                <span className="text-gray-600 font-semibold">Por {article.author}</span>
+              </>
+            )}
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif text-emerald-950 leading-tight">
+            {article.title}
+          </h1>
+
+          {article.subtitle && (
+            <p className="text-xl text-emerald-800/80 font-serif italic leading-relaxed">
+              {article.subtitle}
+            </p>
+          )}
+        </header>
+
+        {/* Featured Image */}
+        {Boolean(article.image && article.image.trim()) && (
+          <div className="w-full aspect-video md:h-96 rounded-3xl overflow-hidden mb-12 bg-emerald-50 border border-emerald-100/60 shadow-md">
+            <img
+              src={article.image}
+              alt={article.title || 'Artigo'}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        )}
+
+        {/* Content Body */}
+        <div className="markdown-body prose prose-emerald prose-lg max-w-none text-gray-700 leading-relaxed border-b border-gray-100 pb-16">
+          <Markdown components={markdownComponents}>{article.content || ''}</Markdown>
+        </div>
+
+        {/* Other Articles Recommendation */}
+        {otherArticles.length > 0 && (
+          <div className="mt-16 pt-8">
+            <h3 className="text-2xl font-serif text-emerald-950 mb-8">Outros Artigos e Reflexões</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {otherArticles.map((other) => (
+                <Link
+                  key={other.id}
+                  to={`/artigos/${other.id}`}
+                  className="p-6 bg-emerald-50/60 hover:bg-emerald-50 rounded-2xl border border-emerald-100/60 transition-all hover:shadow-sm group flex flex-col justify-between"
+                >
+                  <div>
+                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider block mb-2">{other.date}</span>
+                    <h4 className="text-lg font-serif font-bold text-gray-900 group-hover:text-emerald-700 transition-colors line-clamp-2 mb-2">
+                      {other.title}
+                    </h4>
+                    {other.subtitle && (
+                      <p className="text-xs text-gray-500 line-clamp-1 italic mb-4">{other.subtitle}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 group-hover:translate-x-1 transition-transform">
+                    Ler artigo <ArrowRight size={14} />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const EventModal = ({ event, onClose }: { event: any, onClose: () => void }) => {
+  if (!event) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative my-auto animate-in fade-in zoom-in-95 duration-200">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors backdrop-blur-md"
+        >
+          <X size={20} />
+        </button>
+        {Boolean(event.image && event.image.trim()) && (
+          <div className="w-full aspect-video sm:h-72 overflow-hidden bg-emerald-50 relative">
+            <img
+              src={event.image}
+              alt={event.title || 'Evento'}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        )}
+        <div className="p-6 sm:p-10 space-y-6">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-emerald-600 uppercase tracking-wider">
+            <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full">{event.date}</span>
+            <span className="flex items-center gap-1 text-gray-600"><Clock size={14} /> {event.time}</span>
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-serif text-emerald-950 leading-tight">
+            {event.title}
+          </h2>
+          {event.subtitle && (
+            <p className="text-lg text-emerald-800/80 font-medium italic">
+              {event.subtitle}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 bg-emerald-50/60 p-4 rounded-2xl">
+            <div className="flex items-center gap-2 text-emerald-700 font-medium">
+              <MapPin size={16} /> {event.location}
+            </div>
+            {event.author && (
+              <div className="flex items-center gap-2">
+                <User size={16} /> {event.author}
+              </div>
+            )}
+          </div>
+          <div className="text-gray-700 leading-relaxed prose prose-emerald max-w-none">
+            <Markdown components={markdownComponents}>{event.description || ''}</Markdown>
+          </div>
+          <div className="pt-6 border-t border-gray-100 flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors text-sm"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const HeroSlider = () => {
   const { slides } = useContent();
   const [current, setCurrent] = useState(0);
@@ -256,10 +554,16 @@ const HeroSlider = () => {
           transition={{ duration: 1.5 }}
           className="absolute inset-0"
         >
-          <div 
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${slides[current].image})` }}
-          />
+          {Boolean(slides[current]?.image && slides[current].image.trim()) ? (
+            <img 
+              src={slides[current].image} 
+              alt={slides[current].title || 'Slide MEP'} 
+              className="absolute inset-0 w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950" />
+          )}
           <div className="absolute inset-0 bg-black/40" />
         </motion.div>
       </AnimatePresence>
@@ -290,12 +594,23 @@ const HeroSlider = () => {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 1.1, duration: 0.8 }}
           >
-            <Link 
-              to={slides[current].link}
-              className="px-8 py-3 bg-emerald-600 text-white rounded-full font-bold hover:bg-emerald-700 transition-all flex items-center gap-2 group"
-            >
-              Saiba Mais <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-            </Link>
+            {slides[current].link.startsWith('http://') || slides[current].link.startsWith('https://') ? (
+              <a 
+                href={slides[current].link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-8 py-3 bg-emerald-600 text-white rounded-full font-bold hover:bg-emerald-700 transition-all flex items-center gap-2 group inline-flex"
+              >
+                Saiba Mais <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              </a>
+            ) : (
+              <Link 
+                to={slides[current].link}
+                className="px-8 py-3 bg-emerald-600 text-white rounded-full font-bold hover:bg-emerald-700 transition-all flex items-center gap-2 group inline-flex"
+              >
+                Saiba Mais <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              </Link>
+            )}
           </motion.div>
         )}
       </div>
@@ -320,6 +635,7 @@ const HeroSlider = () => {
 const NewsSection = () => {
   const { news } = useContent();
   const displayNews = news.length > 0 ? news.slice(0, 5) : mockNews;
+  const [selectedNews, setSelectedNews] = useState<any | null>(null);
 
   return (
     <div className="space-y-8">
@@ -334,15 +650,22 @@ const NewsSection = () => {
           <motion.article 
             key={item.id}
             whileHover={{ x: 5 }}
+            onClick={() => setSelectedNews(item)}
             className="flex gap-4 group cursor-pointer"
           >
-            <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 overflow-hidden rounded-lg">
-              <img 
-                src={item.image} 
-                alt={item.title} 
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                referrerPolicy="no-referrer"
-              />
+            <div className="w-24 h-24 sm:w-32 sm:h-32 shrink-0 overflow-hidden rounded-xl bg-emerald-50 border border-emerald-100/60 shadow-xs">
+              {Boolean(item.image && item.image.trim()) ? (
+                <img 
+                  src={item.image} 
+                  alt={item.title || 'Notícia'} 
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-emerald-600 font-serif font-bold text-sm bg-emerald-100">
+                  MEP
+                </div>
+              )}
             </div>
             <div className="flex flex-col justify-center">
               <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">{item.date}</span>
@@ -356,6 +679,10 @@ const NewsSection = () => {
           </motion.article>
         ))}
       </div>
+
+      {selectedNews && (
+        <NewsModal item={selectedNews} onClose={() => setSelectedNews(null)} />
+      )}
     </div>
   );
 };
@@ -363,6 +690,7 @@ const NewsSection = () => {
 const EventsSection = () => {
   const { events } = useContent();
   const displayEvents = events.length > 0 ? events.slice(0, 4) : mockEvents;
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
 
   return (
     <div className="bg-emerald-50 p-8 rounded-2xl">
@@ -372,13 +700,17 @@ const EventsSection = () => {
       </div>
       <div className="space-y-6">
         {displayEvents.map((event) => (
-          <div key={event.id} className="flex gap-4 items-start border-b border-emerald-100 last:border-0 pb-4 last:pb-0">
+          <div 
+            key={event.id} 
+            onClick={() => setSelectedEvent(event)}
+            className="flex gap-4 items-start border-b border-emerald-100 last:border-0 pb-4 last:pb-0 cursor-pointer group hover:opacity-90"
+          >
             <div className="bg-white p-3 rounded-lg text-center min-w-[70px] shadow-sm">
               <span className="block text-xs font-bold text-emerald-600 uppercase">{event.date.split(' ')[1] || 'MAI'}</span>
               <span className="block text-xl font-bold text-emerald-900 leading-none">{event.date.split(' ')[0] || '20'}</span>
             </div>
             <div>
-              <h3 className="font-bold text-gray-800 mb-2 leading-tight">{event.title}</h3>
+              <h3 className="font-bold text-gray-800 mb-2 leading-tight group-hover:text-emerald-700 transition-colors">{event.title}</h3>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 <span className="flex items-center gap-1"><Clock size={14} /> {event.time}</span>
                 <span className="flex items-center gap-1"><MapPin size={14} /> {event.location}</span>
@@ -390,6 +722,10 @@ const EventsSection = () => {
       <Link to="/eventos" className="block w-full mt-8 py-3 bg-emerald-600 text-white text-center rounded-xl font-bold hover:bg-emerald-700 transition-colors">
         Ver Agenda Completa
       </Link>
+
+      {selectedEvent && (
+        <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      )}
     </div>
   );
 };
@@ -400,19 +736,20 @@ const FeaturedModules = () => {
   return (
     <section className="py-20 px-6 bg-white">
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-        {featuredModules.map((m) => (
-          <motion.div 
-            key={m.id}
-            whileHover={{ y: -10 }}
-            className="group relative h-80 overflow-hidden rounded-3xl cursor-pointer shadow-lg"
-          >
-            <Link to={m.link}>
-              <img 
-                src={m.img} 
-                className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                alt={m.title}
-                referrerPolicy="no-referrer"
-              />
+        {featuredModules.map((m) => {
+          const isExternal = m.link?.startsWith('http://') || m.link?.startsWith('https://');
+          const content = (
+            <>
+              {m.img ? (
+                <img 
+                  src={m.img} 
+                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  alt={m.title}
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-emerald-900" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
               <div className="absolute bottom-0 left-0 p-8 text-white">
                 <h3 className="text-2xl font-bold mb-2">{m.title}</h3>
@@ -421,9 +758,27 @@ const FeaturedModules = () => {
                 </p>
                 <div className={cn("w-10 h-1 rounded-full", m.color)} />
               </div>
-            </Link>
-          </motion.div>
-        ))}
+            </>
+          );
+
+          return (
+            <motion.div 
+              key={m.id}
+              whileHover={{ y: -10 }}
+              className="group relative h-80 overflow-hidden rounded-3xl cursor-pointer shadow-lg bg-emerald-900"
+            >
+              {isExternal ? (
+                <a href={m.link} target="_blank" rel="noopener noreferrer" className="block w-full h-full">
+                  {content}
+                </a>
+              ) : (
+                <Link to={m.link || '#'} className="block w-full h-full">
+                  {content}
+                </Link>
+              )}
+            </motion.div>
+          );
+        })}
       </div>
     </section>
   );
@@ -571,13 +926,19 @@ const SocialMediaSection = () => {
                     whileHover={{ x: 10 }}
                     className="flex gap-4 group bg-white p-4 rounded-2xl shadow-sm hover:shadow-md transition-all"
                   >
-                    <div className="w-32 h-20 shrink-0 overflow-hidden rounded-lg">
-                      <img 
-                        src={video.thumbnail} 
-                        alt={video.title} 
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                        referrerPolicy="no-referrer"
-                      />
+                    <div className="w-32 h-20 shrink-0 overflow-hidden rounded-lg bg-emerald-50">
+                      {video.thumbnail ? (
+                        <img 
+                          src={video.thumbnail} 
+                          alt={video.title} 
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-emerald-100 text-emerald-700 font-bold text-xs">
+                          Vídeo
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col justify-center">
                       <h3 className="font-bold text-gray-900 line-clamp-1 group-hover:text-emerald-700 transition-colors">
@@ -620,14 +981,20 @@ const SocialMediaSection = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     whileHover={{ scale: 1.05 }}
-                    className="aspect-square overflow-hidden rounded-2xl shadow-sm group relative"
+                    className="aspect-square overflow-hidden rounded-2xl shadow-sm group relative bg-emerald-50"
                   >
-                    <img 
-                      src={post.image} 
-                      alt="Instagram Post" 
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                      referrerPolicy="no-referrer"
-                    />
+                    {post.image ? (
+                      <img 
+                        src={post.image} 
+                        alt="Instagram Post" 
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-xs">
+                        Post
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
                       <p className="text-white text-[10px] text-center line-clamp-3">
                         {post.caption}
@@ -699,13 +1066,19 @@ const InstitutionsPage = () => {
               )}
             >
               <div className={cn("flex flex-col", expandedId === inst.id ? "md:flex-row" : "")}>
-                <div className={cn("relative", expandedId === inst.id ? "md:w-1/2 h-64 md:h-auto" : "h-48")}>
-                  <img 
-                    src={inst.image} 
-                    alt={inst.name} 
-                    className="absolute inset-0 w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
+                <div className={cn("relative bg-emerald-50", expandedId === inst.id ? "md:w-1/2 h-64 md:h-auto" : "h-48")}>
+                  {inst.image ? (
+                    <img 
+                      src={inst.image} 
+                      alt={inst.name} 
+                      className="absolute inset-0 w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-emerald-100 text-emerald-800 font-serif font-bold text-lg p-4 text-center">
+                      {inst.name}
+                    </div>
+                  )}
                 </div>
                 <div className="p-8 flex-grow">
                   <h3 className="text-2xl font-bold text-emerald-900 mb-3">{inst.name}</h3>
@@ -761,7 +1134,12 @@ const InstitutionsPage = () => {
                       </div>
                       <div className="flex gap-4 pt-4">
                         {inst.website && (
-                          <a href={inst.website} target="_blank" rel="noopener noreferrer" className="px-6 py-2 bg-emerald-600 text-white rounded-full text-sm font-bold hover:bg-emerald-700">
+                          <a 
+                            href={inst.website.startsWith('http://') || inst.website.startsWith('https://') ? inst.website : `https://${inst.website}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="px-6 py-2 bg-emerald-600 text-white rounded-full text-sm font-bold hover:bg-emerald-700"
+                          >
                             Visitar Site
                           </a>
                         )}
@@ -815,27 +1193,47 @@ const ArticlesPage = () => {
                 key={article.id}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="group cursor-pointer"
+                className="group"
               >
-                <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex flex-col md:flex-row gap-6 items-start">
+                  {Boolean(article.image && article.image.trim()) && (
+                    <Link 
+                      to={`/artigos/${article.id}`} 
+                      className="w-full md:w-56 h-44 rounded-2xl overflow-hidden shrink-0 bg-emerald-50 shadow-xs border border-emerald-100/60 block"
+                    >
+                      <img 
+                        src={article.image} 
+                        alt={article.title || 'Artigo'} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                        referrerPolicy="no-referrer" 
+                      />
+                    </Link>
+                  )}
                   <div className="flex-grow">
                     <div className="flex items-center gap-3 text-xs font-bold text-emerald-600 uppercase tracking-widest mb-3">
                       <span>{article.date}</span>
                       <span className="w-1 h-1 bg-emerald-300 rounded-full" />
                       <span>{article.author}</span>
                     </div>
-                    <h2 className="text-2xl md:text-3xl font-serif text-gray-900 group-hover:text-emerald-700 transition-colors mb-3">
-                      {article.title}
-                    </h2>
-                    <h3 className="text-lg text-emerald-800/70 italic mb-4">
-                      {article.subtitle}
-                    </h3>
+                    <Link to={`/artigos/${article.id}`} className="block">
+                      <h2 className="text-2xl md:text-3xl font-serif text-gray-900 group-hover:text-emerald-700 transition-colors mb-3">
+                        {article.title}
+                      </h2>
+                    </Link>
+                    {article.subtitle && (
+                      <h3 className="text-lg text-emerald-800/70 italic mb-4">
+                        {article.subtitle}
+                      </h3>
+                    )}
                     <div className="text-gray-600 leading-relaxed line-clamp-3 prose prose-sm prose-emerald">
-                      <Markdown>{article.content}</Markdown>
+                      <Markdown components={markdownComponents}>{article.content || ''}</Markdown>
                     </div>
-                    <div className="mt-6 flex items-center gap-2 text-emerald-600 font-bold text-sm">
+                    <Link 
+                      to={`/artigos/${article.id}`}
+                      className="mt-6 inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-bold text-sm transition-colors"
+                    >
                       Continuar lendo <ArrowRight size={16} />
-                    </div>
+                    </Link>
                   </div>
                 </div>
                 <div className="mt-12 h-px bg-emerald-50" />
@@ -851,12 +1249,15 @@ const ArticlesPage = () => {
                 <ul className="space-y-4">
                   {allArticles.map((article) => (
                     <li key={article.id} className="group">
-                      <a href="#" className="flex flex-col">
+                      <Link 
+                        to={`/artigos/${article.id}`} 
+                        className="flex flex-col text-left w-full hover:opacity-80 transition-opacity"
+                      >
                         <span className="text-xs text-emerald-600 font-bold">{article.date}</span>
                         <span className="text-sm font-medium text-gray-700 group-hover:text-emerald-700 transition-colors line-clamp-2">
                           {article.title}
                         </span>
-                      </a>
+                      </Link>
                     </li>
                   ))}
                 </ul>
@@ -867,9 +1268,12 @@ const ArticlesPage = () => {
                 <p className="text-sm text-emerald-100/70 mb-6">
                   Tem um artigo ou reflexão que gostaria de compartilhar com o movimento?
                 </p>
-                <button className="w-full py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-400 transition-colors">
+                <Link 
+                  to="/contato"
+                  className="block text-center w-full py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-400 transition-colors"
+                >
                   Enviar Artigo
-                </button>
+                </Link>
               </div>
             </div>
           </aside>
@@ -883,6 +1287,7 @@ const NewsPage = () => {
   const { news } = useContent();
   const displayNews = news.length > 0 ? news : mockNews;
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedNews, setSelectedNews] = useState<any | null>(null);
   const itemsPerPage = 10;
 
   const totalPages = Math.ceil(displayNews.length / itemsPerPage);
@@ -895,9 +1300,19 @@ const NewsPage = () => {
         <h1 className="text-4xl font-serif text-emerald-900 mb-12">Todas as Notícias</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
           {currentItems.map(item => (
-            <article key={item.id} className="group cursor-pointer">
-              <div className="aspect-video rounded-2xl overflow-hidden mb-6">
-                <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.title} referrerPolicy="no-referrer" />
+            <article 
+              key={item.id} 
+              onClick={() => setSelectedNews(item)}
+              className="group cursor-pointer"
+            >
+              <div className="aspect-video rounded-2xl overflow-hidden mb-6 bg-emerald-50 border border-emerald-100/60 shadow-xs">
+                {Boolean(item.image && item.image.trim()) ? (
+                  <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={item.title || 'Notícia'} referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-full h-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-serif font-bold text-lg">
+                    MEP Notícias
+                  </div>
+                )}
               </div>
               <span className="text-xs font-bold text-emerald-600 uppercase">{item.date}</span>
               <h2 className="text-xl font-bold mt-2 mb-3 group-hover:text-emerald-700">{item.title}</h2>
@@ -951,6 +1366,10 @@ const NewsPage = () => {
           </div>
         )}
       </div>
+
+      {selectedNews && (
+        <NewsModal item={selectedNews} onClose={() => setSelectedNews(null)} />
+      )}
     </div>
   );
 };
@@ -958,6 +1377,7 @@ const NewsPage = () => {
 const EventsPage = () => {
   const { events } = useContent();
   const displayEvents = events.length > 0 ? events : mockEvents;
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
 
   return (
     <div className="pt-32 pb-20 px-6 bg-emerald-50/20 min-h-screen">
@@ -965,18 +1385,30 @@ const EventsPage = () => {
         <h1 className="text-4xl font-serif text-emerald-900 mb-12">Calendário de Eventos</h1>
         <div className="space-y-8">
           {displayEvents.map(event => (
-            <div key={event.id} className="bg-white p-8 rounded-3xl shadow-sm border border-emerald-50 flex flex-col md:flex-row gap-8 items-center">
-              <div className="w-full md:w-64 h-48 rounded-2xl overflow-hidden shrink-0">
-                <img src={event.image} className="w-full h-full object-cover" alt={event.title} referrerPolicy="no-referrer" />
+            <div 
+              key={event.id} 
+              onClick={() => setSelectedEvent(event)}
+              className="bg-white p-8 rounded-3xl shadow-sm border border-emerald-50 flex flex-col md:flex-row gap-8 items-center cursor-pointer group hover:border-emerald-200 transition-all"
+            >
+              <div className="w-full md:w-64 h-48 rounded-2xl overflow-hidden shrink-0 bg-emerald-50 border border-emerald-100/60 shadow-xs">
+                {Boolean(event.image && event.image.trim()) ? (
+                  <img src={event.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={event.title || 'Evento'} referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-full h-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-serif font-bold text-lg">
+                    MEP Evento
+                  </div>
+                )}
               </div>
               <div className="flex-grow">
                 <div className="flex items-center gap-4 mb-3">
                   <span className="px-4 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold uppercase">{event.date}</span>
                   <span className="flex items-center gap-1 text-sm text-gray-500"><Clock size={14} /> {event.time}</span>
                 </div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">{event.title}</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2 group-hover:text-emerald-700 transition-colors">{event.title}</h2>
                 {event.subtitle && <p className="text-emerald-600 font-medium mb-2">{event.subtitle}</p>}
-                <p className="text-gray-600 mb-4">{event.description}</p>
+                <div className="text-gray-600 mb-4 prose prose-sm prose-emerald max-w-none line-clamp-3">
+                  <Markdown components={markdownComponents}>{event.description || ''}</Markdown>
+                </div>
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
                   <div className="flex items-center gap-2 text-emerald-600 font-medium">
                     <MapPin size={16} /> {event.location}
@@ -988,13 +1420,23 @@ const EventsPage = () => {
                   )}
                 </div>
               </div>
-              <button className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors whitespace-nowrap">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedEvent(event);
+                }}
+                className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors whitespace-nowrap shadow-sm"
+              >
                 Participar
               </button>
             </div>
           ))}
         </div>
       </div>
+
+      {selectedEvent && (
+        <EventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      )}
     </div>
   );
 };
@@ -1028,7 +1470,7 @@ Em 21.09.2024, realiza-se a primeira de uma série de reuniões virtuais com a p
           <div className="w-20 h-1 bg-emerald-500 rounded-full mx-auto mt-6" />
         </header>
         <div className="markdown-body prose prose-emerald max-w-none prose-lg text-gray-700">
-          <Markdown>{content}</Markdown>
+          <Markdown components={markdownComponents}>{content}</Markdown>
         </div>
       </div>
     </div>
@@ -1103,7 +1545,7 @@ Assinam este documento:
     <div className="pt-40 pb-20 px-6 bg-white min-h-screen">
       <div className="max-w-4xl mx-auto">
         <div className="markdown-body prose prose-emerald max-w-none">
-          <Markdown>{content}</Markdown>
+          <Markdown components={markdownComponents}>{content}</Markdown>
         </div>
       </div>
     </div>
@@ -1227,6 +1669,7 @@ export default function App() {
               <Route path="/instituicoes" element={<InstitutionsPage />} />
               <Route path="/noticias" element={<NewsPage />} />
               <Route path="/artigos" element={<ArticlesPage />} />
+              <Route path="/artigos/:id" element={<ArticleDetailPage />} />
               <Route path="/eventos" element={<EventsPage />} />
               <Route path="/login" element={<LoginPage />} />
         <Route path="/admin" element={<AdminLayout><Dashboard /></AdminLayout>} />
